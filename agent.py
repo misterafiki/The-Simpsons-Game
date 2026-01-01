@@ -1,56 +1,63 @@
+from flask import Flask, render_template, request, jsonify
 import requests
 import ollama
-from flask import Flask, jsonify, request
 
 app = Flask(__name__)
 
-# URL de la API que proporcionaste
-API_URL = "https://thesimpsonsapi.com/api/characters"
+# Configuración
+MODEL_NAME = "simpsons-game" # El nombre que le diste en el Modelfile
+SIMPSONS_API = "https://thesimpsonsapi.com/api/characters"
 
-# Variable global temporal para guardar el personaje actual (en un juego real usarías sesiones)
-contexto_juego = {
-    "personaje_actual": None,
-    "historial_chat": []
+# Almacén temporal del juego (en memoria)
+game_state = {
+    "character": None,
+    "history": []
 }
 
-@app.route('/nuevo-juego', methods=['GET'])
-def nuevo_juego():
-    # 1. Obtener datos de la API
-    response = requests.get(API_URL).json()
-    # Elegimos el primero de la lista (puedes randomizar esto)
-    personaje = response['results'][0] 
-    
-    contexto_juego["personaje_actual"] = personaje
-    # Limpiamos el historial para un nuevo juego
-    contexto_juego["historial_chat"] = [
-        {"role": "user", "content": f"Aquí tienes el JSON del personaje: {personaje}"}
-    ]
+@app.route('/')
+def index():
+    return render_template('index.html')
 
-    # 2. Llamar a Ollama con tu modelo personalizado
-    res = ollama.chat(model='simpsons-host:latest', messages=contexto_juego["historial_chat"])
-    
-    respuesta_ia = res['message']['content']
-    contexto_juego["historial_chat"].append(res['message'])
+@app.route('/start', methods=['GET'])
+def start_game():
+    try:
+        # 1. Obtener personaje de la API
+        resp = requests.get(SIMPSONS_API).json()
+        import random
+        character = random.choice(resp['results'])
+        
+        game_state["character"] = character
+        game_state["history"] = [
+            {"role": "user", "content": f"Aquí tienes el JSON del personaje: {character}"}
+        ]
 
-    return jsonify({
-        "presentacion": respuesta_ia,
-        "imagen": f"https://thesimpsonsapi.com{personaje['portrait_path']}" # Construir URL imagen
-    })
+        # 2. Primera pista de la IA
+        res = ollama.chat(model=MODEL_NAME, messages=game_state["history"])
+        ia_message = res['message']['content']
+        
+        game_state["history"].append(res['message'])
+        
+        return jsonify({
+            "pista": ia_message,
+            "imagen": f"https://thesimpsonsapi.com{character['portrait_path']}"
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-@app.route('/adivinar', methods=['POST'])
-def adivinar():
-    user_input = request.json.get('intento')
+@app.route('/guess', methods=['POST'])
+def guess():
+    user_guess = request.json.get('text')
     
-    # Añadimos el intento al historial
-    contexto_juego["historial_chat"].append({"role": "user", "content": user_input})
+    # Añadir el intento al historial
+    game_state["history"].append({"role": "user", "content": user_guess})
     
-    # Consultamos a la IA (ella sabe si acertó o no por las reglas del Modelfile)
-    res = ollama.chat(model='simpsons-host', messages=contexto_juego["historial_chat"])
+    # Consultar a Ollama
+    res = ollama.chat(model=MODEL_NAME, messages=game_state["history"])
+    ia_response = res['message']['content']
     
-    respuesta_ia = res['message']['content']
-    contexto_juego["historial_chat"].append(res['message'])
-
-    return jsonify({"respuesta": respuesta_ia})
+    game_state["history"].append(res['message'])
+    
+    return jsonify({"respuesta": ia_response})
 
 if __name__ == '__main__':
-    app.run(port=5000)
+    app.run(debug=True, port=5000)
