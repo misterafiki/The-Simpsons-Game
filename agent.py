@@ -1,11 +1,12 @@
 from flask import Flask, render_template, request, jsonify
 import requests
 import ollama
+import random
 
 app = Flask(__name__)
 
 # Configuración
-MODEL_NAME = "simpsons-game" # El nombre que le diste en el Modelfile
+MODEL_NAME = "simpsons-host:latest" # El nombre que le diste en el Modelfile
 SIMPSONS_API = "https://thesimpsonsapi.com/api/characters"
 
 # Almacén temporal del juego (en memoria)
@@ -23,7 +24,7 @@ def start_game():
     try:
         # 1. Obtener personaje de la API
         resp = requests.get(SIMPSONS_API).json()
-        import random
+        
         character = random.choice(resp['results'])
         
         game_state["character"] = character
